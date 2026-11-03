@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cosmossi Atlas</title>
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/timeline.css">
+  <link rel="stylesheet" href="css/botbar.css">
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <canvas id="ov"></canvas>
+  <canvas id="fx" aria-hidden="true"></canvas>
+
+  <aside id="panel">
+    <header>
+      <div class="brand"><span class="mark">◐</span><div><h1>Cosmossi</h1><p>Atlas</p></div></div>
+      <div class="hbtns">
+        <button id="panelFold" type="button" title="Fold all sections" aria-label="Fold all sections">⌃</button>
+        <button id="panelToggle" title="Hide / show panel" aria-label="Toggle panel">‹</button>
+      </div>
+    </header>
+    <div class="scroll">
+      <section id="secCountries">
+        <h2>Countries <span id="ctryCount"></span></h2>
+        <div class="cl-tools">
+          <input id="countryFilter" class="filter" type="search" placeholder="Find a country, region or city…" aria-label="Find a country, subdivision or city by name" autocomplete="off" spellcheck="false">
+          <button id="countrySort" class="ghost" type="button" aria-pressed="false" aria-label="Sort the list A to Z" title="In the order drawn (click to sort A–Z)">A–Z</button>
+        </div>
+        <div id="countryList" role="tree" aria-label="Countries"></div>
+      </section>
+      <section id="secRank">
+        <h2>Rankings <span id="rankCount"></span></h2>
+        <div class="rk-controls"><select id="rankKey" aria-label="Rank countries by"></select><button id="rankDir" class="ghost" type="button" title="Change the order"></button></div>
+        <ol id="rankList"></ol>
+      </section>
+      <section id="secProj" data-closed="1">
+        <h2>Projection <span id="projCur"></span></h2>
+        <ul id="projList"></ul>
+      </section>
+      <section>
+        <h2>Orientation</h2>
+        <div class="slider"><label for="lonSlider" id="lonLabel">Central meridian</label><output id="lonVal">0°</output>
+          <input id="lonSlider" type="range" min="-180" max="180" step="1" value="0"></div>
+        <div class="slider" id="latRow" hidden><label for="latSlider">Centre latitude</label><output id="latVal">20°</output>
+          <input id="latSlider" type="range" min="-90" max="90" step="1" value="20"></div>
+        <button id="resetCtr" class="ghost">Reset orientation</button>
+      </section>
+      <section>
+        <h2>Other features <span id="featCount"></span></h2>
+        <ul id="featList"></ul>
+      </section>
+      <section id="tlSection">
+        <h2>Timeline <span id="evCount"></span></h2>
+        <div id="tlNowCard" class="tn-card" aria-live="polite"></div>
+        <div class="ev-tools">
+          <input id="evSearch" type="search" placeholder="Search events…" aria-label="Search events" autocomplete="off">
+          <div id="evKinds" class="ev-kinds" role="group" aria-label="Filter events by kind" hidden></div>
+        </div>
+        <ul id="evList"></ul>
+        <div id="evForm" hidden></div>
+        <button id="evAdd" class="ghost">+ Add event at slider day</button>
+        <div class="field"><label for="tlFrom">Range from</label><span class="inp"><input id="tlFrom" type="text" placeholder="DD/MM/YYY-EE"></span></div>
+        <div class="field"><label for="tlTo">Range to</label><span class="inp"><input id="tlTo" type="text" placeholder="DD/MM/YYY-EE"></span></div>
+        <button id="tlFit" class="ghost">Fit range to lifespans &amp; events</button>
+      </section>
+      <section>
+        <h2>Planet &amp; units</h2>
+        <div class="field"><label for="radius">Planet radius</label><span class="inp"><input id="radius" type="number" min="100" step="1" value="6371"><i>km</i></span></div>
+        <div class="field"><label for="themeSel">Map theme</label><select id="themeSel"></select></div>
+        <div class="field"><label for="poleSel">Polar cap (hides the distorted poles)</label><select id="poleSel"><option value="0">Off</option><option value="84">Above 84°</option><option value="80">Above 80°</option><option value="75">Above 75°</option><option value="70">Above 70°</option></select></div>
+        <div class="field"><label for="unitSel">Scale bar unit</label><select id="unitSel"></select></div>
+      </section>
+      <section>
+        <h2>Reference image</h2>
+        <div class="refrow"><button id="refLoad" class="ghost">Load image…</button><button id="refClear" class="ghost" disabled>Remove</button></div>
+        <div id="refName" class="refname">None. Use an equirectangular world map (2:1).</div>
+        <label class="toggle"><input id="refShow" type="checkbox" checked disabled><span></span>Show reference</label>
+        <div class="field"><label for="refOpacity">Opacity</label><span class="inp"><input id="refOpacity" type="range" min="0" max="100" step="1" value="50" disabled><i id="refOpVal">50%</i></span></div>
+      </section>
+      <section id="secBackup" data-closed="1">
+        <h2>Save &amp; backup</h2>
+        <label class="toggle"><input id="autoFile" type="checkbox" checked><span></span>Autosave to the last saved file</label>
+        <div class="hnote" id="saveStatus">Not saved to a file yet - press Ctrl+S once to choose where.</div>
+        <button id="saveAs" type="button">Save as…</button>
+        <button id="newMap" type="button" title="Ctrl+N">New map…</button>
+        <label class="toggle"><input id="driveOn" type="checkbox"><span></span>Google Drive backup</label>
+        <div id="driveBox" hidden>
+          <input id="driveId" type="text" placeholder="Google OAuth client ID" spellcheck="false" autocomplete="off">
+          <button id="driveConnect" type="button">Connect &amp; back up now</button>
+          <div class="hnote" id="driveStatus">Backs up after saves and autosaves (at most once a minute) to one file in your Drive. Needs your own OAuth client ID (Google Cloud console - Credentials - Web application).</div>
+        </div>
+      </section>
+      <section id="secClimate" data-closed="1">
+        <h2>Climate <span id="climTag"></span></h2>
+        <div class="field"><label for="climLayer">Layer</label><select id="climLayer" aria-label="Climate layer">
+          <option value="off">Off</option><option value="temp">Temperature</option><option value="rain">Rainfall</option>
+          <option value="koppen">Köppen climate classes</option><option value="biomes">Biomes, climate-adjusted</option></select></div>
+        <div id="climMonthRow" class="slider" hidden><label for="climMonth" id="climMonthLbl">Month</label><output id="climMonthVal"></output>
+          <input id="climMonth" type="range" min="0" max="15" step="1" value="0" aria-label="Month of the year (15 = whole year)"></div>
+        <label class="toggle" id="climFollowRow" hidden><input id="climFollow" type="checkbox"><span></span>Follow the timeline date</label>
+        <div class="field" id="climAnchorRow" hidden><label for="climAnchor" title="The day of the Cosmossi year on which the northern winter solstice falls (sets which time of year each month falls on)">Winter solstice on day</label><span class="inp"><input id="climAnchor" type="number" min="1" max="366" step="1" value="1"></span></div>
+        <div class="field"><label for="climAlpha">Opacity</label><span class="inp"><input id="climAlpha" type="range" min="10" max="100" step="5" value="85"><i id="climAlphaVal">85%</i></span></div>
+        <div id="climLegend" class="clim-legend"></div>
+        <button id="globeBtn" type="button" title="Show the 3D globe beside the atlas">Open 3D globe</button>
+        <div class="hnote">Simulated with World Orogen's climate engine at 25.2° axial tilt on your heightmap. Alduran's heat is hand-set.</div>
+      </section>
+      <section id="secTopo" data-closed="1">
+        <h2>Topography <span id="topoTag"></span></h2>
+        <label class="toggle"><input id="topoOn" type="checkbox"><span></span>Topographic layer</label>
+        <div id="topoBody" hidden>
+          <label class="toggle"><input id="topoTint" type="checkbox" checked><span></span>Elevation colours</label>
+          <div class="field" id="topoAlphaRow"><label for="topoAlpha">Colour opacity</label><span class="inp"><input id="topoAlpha" type="range" min="10" max="100" step="5" value="80"><i id="topoAlphaVal">80%</i></span></div>
+          <label class="toggle"><input id="topoShade" type="checkbox" checked><span></span>Shaded relief</label>
+          <div class="field" id="topoReliefRow"><label for="topoRelief" title="Vertical exaggeration of the relief shading">Relief</label><span class="inp"><input id="topoRelief" type="range" min="1" max="40" step="1" value="15"><i id="topoReliefVal">×15</i></span></div>
+          <label class="toggle"><input id="topoLines" type="checkbox"><span></span>Contour lines</label>
+          <div class="field" id="topoStepRow"><label for="topoStep">Contour every</label><select id="topoStep" aria-label="Contour interval">
+            <option value="0.05">50 m</option><option value="0.1">100 m</option><option value="0.25" selected>250 m</option><option value="0.5">500 m</option><option value="1">1000 m</option></select></div>
+          <div id="topoLegend" class="clim-legend"></div>
+          <div class="hnote">The 3D globe's heightmap (0 to 6 km), drawn on land and lit from the north-west. The heightmap has no sea floor. It does not follow land you edit in the atlas. Hover the map for the height.</div>
+        </div>
+      </section>
+      <section id="secRoads" data-closed="1">
+        <h2>Roads <span id="roadCount"></span></h2>
+        <label class="toggle"><input id="tRoads" type="checkbox" checked><span></span>Show roads</label>
+        <div id="roadTierToggles"></div>
+        <label class="toggle"><input id="tRoadAll" type="checkbox"><span></span>Every tier at every zoom</label>
+        <input id="roadFind" type="search" placeholder="Find a road" autocomplete="off" aria-label="Find a road">
+        <ul id="roadList"></ul>
+        <div class="hnote">Draw roads with the Road tool (O). Finer tiers appear as you zoom in. In the map file a road is stored as a river tagged in its notes, so older versions of the app still open the file.</div>
+      </section>
+      <section>
+        <h2>Layers</h2>
+        <label class="toggle"><input id="tBiomes" type="checkbox" checked><span></span>Biome colours</label>
+        <label class="toggle"><input id="tCoast" type="checkbox" checked><span></span>Coastline &amp; lakes</label>
+        <label class="toggle"><input id="tRivers" type="checkbox" checked><span></span>Rivers</label>
+        <label class="toggle"><input id="tCountries" type="checkbox" checked><span></span>Countries &amp; subdivisions</label>
+        <div class="field"><label for="fillOpacity">Country opacity</label><span class="inp"><input id="fillOpacity" type="range" min="0" max="200" step="10" value="100"><i id="fillOpVal">100%</i></span></div>
+        <label class="toggle"><input id="tCities" type="checkbox" checked><span></span>Cities</label>
+        <label class="toggle"><input id="tOther" type="checkbox" checked><span></span>Labels, mountains &amp; drawn rivers</label>
+        <label class="toggle"><input id="tRipples" type="checkbox" checked><span></span>Coastal water-lines</label>
+        <label class="toggle"><input id="tFrame" type="checkbox" checked><span></span>Map frame</label>
+        <div class="seg-label">Graticule</div>
+        <div class="seg" id="gratSeg">
+          <button data-v="0">Off</button><button data-v="30" class="on">30°</button><button data-v="15">15°</button><button data-v="10">10°</button>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <div id="toolbar">
+    <button data-tool="pan" title="Move / navigate - drag to pan, nothing gets added (H)"><svg viewBox="0 0 24 24"><path d="M8 12V5.5a1.5 1.5 0 013 0V11m0-1V4.5a1.5 1.5 0 013 0V11m0-4.5a1.5 1.5 0 013 0V14c0 4-2.5 7-6.5 7-3 0-4.5-1.5-6-4l-2-3.2a1.4 1.4 0 012.3-1.5L8 14"/></svg></button>
+    <button data-tool="select" title="Select / edit (V)"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z"/></svg></button>
+    <button data-tool="country" title="Draw a country - pen tool: click for corners, drag for curves (C)"><svg viewBox="0 0 24 24"><path d="M4 9l7-5 9 4-1 9-8 3-6-6z"/></svg></button>
+    <button data-tool="sub" title="Draw a subdivision inside a country or subdivision, any depth (S)"><svg viewBox="0 0 24 24"><path d="M4 9l7-5 9 4-1 9-8 3-6-6zM8 11l5 1 5-2M13 12l-1 8"/></svg></button>
+    <button data-tool="brush" title="Brush - paint a border freehand: adds to the selected area or starts a new one, Shift erases (B)"><svg viewBox="0 0 24 24"><path d="M18.5 3.5a2.1 2.1 0 013 3L12 16l-4 1 1-4zM8 17c0 2.2-1.6 3.5-4.5 3.5 1.3-1 1-2.8 2-3.5.7-.5 1.8-.3 2.5 0z"/></svg></button>
+    <button id="tbLand" title="Land editor - drag to add land, Shift or E to erase, [ ] for size"><svg viewBox="0 0 24 24"><path d="M3 17c3-4 5-1 8-5s5-6 10-2M3 21h18M12 12v4"/></svg></button>
+    <button id="tbBiome" title="Biome painter - pick a biome, drag to paint, Shift or E to erase, [ ] for size"><svg viewBox="0 0 24 24"><path d="M5 19C5 10 10 5 19 5c0 9-5 14-14 14zM5 19l8-8"/></svg></button>
+    <button data-tool="range" title="Draw a mountain range area (R)"><svg viewBox="0 0 24 24"><path d="M2 19l6-11 4 7 3-4 7 8z"/></svg></button>
+    <button data-tool="river" title="Draw a river - click along its course (I)"><svg viewBox="0 0 24 24"><path d="M4 4c6 2 2 6 8 8s2 6 8 8"/></svg></button>
+    <button data-tool="road" title="Draw a road - highway, national, regional, local or track; click along its course (O)"><svg viewBox="0 0 24 24"><path d="M8.5 3L5 21M15.5 3L19 21M12 4.5v3M12 10.5v3M12 16.5v3"/></svg></button>
+    <button data-tool="city" title="Place a city (P)"><svg viewBox="0 0 24 24"><path d="M12 21s-6-5.2-6-10a6 6 0 1112 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2"/></svg></button>
+    <button data-tool="label" title="Add a text label (T)"><svg viewBox="0 0 24 24"><path d="M5 6h14M12 6v13"/></svg></button>
+    <span class="sep"></span>
+    <button id="tbMeasure" title="Measure distance or area (M)"><svg viewBox="0 0 24 24"><path d="M3 15l12-12 6 6-12 12zM7 11l2 2M10 8l2 2M13 5l2 2"/></svg></button>
+    <button id="tbHelp" title="Keyboard shortcuts (?)" aria-pressed="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 115 0c0 1.8-2.5 2-2.5 4M12 17v.5"/></svg></button>
+    <button id="tbSnap" class="on" title="Snap to coasts and borders (hold Alt to bypass)"><svg viewBox="0 0 24 24"><path d="M6 4v8a6 6 0 0012 0V4h-4v8a2 2 0 01-4 0V4z"/></svg></button>
+    <button id="tbClip" class="on" title="Keep countries on land: fills never draw over water, and a finished country border is cut to the coast (hold Alt to bypass while drawing)"><svg viewBox="0 0 24 24"><path d="M3 15c3-3 5 3 9 0s6-3 9 0M4 5l5 6M20 5l-5 6M7 5h10"/></svg></button>
+    <span class="sep"></span>
+    <button id="tbUndo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h9a6 6 0 010 12h-3"/></svg></button>
+    <button id="tbRedo" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5M20 9h-9a6 6 0 000 12h3"/></svg></button>
+    <span class="sep"></span>
+    <button id="tbExport" title="Export the map as a PNG image (Ctrl+E)" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M4 14v6h16v-6"/></svg></button>
+    <button id="tbGlobe" title="3D globe beside the atlas - countries, selection, view and climate stay in step"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg></button>
+    <button id="tbNew" title="New map (Ctrl+N) - start a totally blank map"><svg viewBox="0 0 24 24"><path d="M6 3h8l5 5v13H6zM14 3v5h5M12 11v6M9 14h6"/></svg></button>
+    <button id="tbOpen" title="Open map (Ctrl+O)"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg></button>
+    <button id="tbSave" title="Save map (Ctrl+S) - Shift+click or Ctrl+Shift+S to choose a new file"><svg viewBox="0 0 24 24"><path d="M5 4h12l3 3v13H5zM8 4v5h8V4M8 20v-6h8v6"/></svg></button>
+  </div>
+  <div id="toolOpts" hidden>
+    <div class="mb-head"><b id="toTitle">Brush</b></div>
+    <div class="seg" id="toDraw" hidden><button data-d="pen" title="Draw an outline (Expand adds it, Cut removes it)">Pen</button><button data-d="brush" title="Paint the border (B)">Brush</button></div>
+    <div id="toBrush">
+      <div class="to-row"><label for="toSize">Size</label><input id="toSize" type="range" min="6" max="200" step="2" value="28"><output id="toSizeVal">28 px</output></div>
+      <div class="seg" id="toMode"><button data-m="paint" class="on" title="Add to the border (hold Shift to erase)">Paint</button><button data-m="erase" title="Remove from the selected border">Erase</button></div>
+    </div>
+    <div class="to-row"><label for="toLevel" id="toLevelLbl">Level</label><select id="toLevel"></select></div>
+    <div class="hnote" id="toNote"></div>
+    <button id="toNew" type="button" title="Deselect, so the next stroke starts a new area">Start a new area</button>
+  </div>
+  <div id="roadOpts" hidden>
+    <div class="mb-head"><b>Road</b></div>
+    <div id="roadTiers" role="group" aria-label="Road tier to draw"></div>
+    <div class="hnote" id="roadNote"></div>
+  </div>
+  <div id="biomeOpts" hidden>
+    <div class="mb-head"><b>Biome painter</b></div>
+    <div id="biomeSwatches" role="group" aria-label="Biome to paint"></div>
+    <div id="biomeName">—</div>
+    <div class="bo-row"><button id="biomeEraser" type="button" title="Erase painted biome instead of painting (E)">Eraser</button><output id="biomeSize" title="Brush size - [ and ] change it">18 px</output></div>
+  </div>
+  <div id="hint" title="Click to dismiss"></div>
+  <div id="infoCard" hidden></div>
+  <div id="measureBox" hidden>
+    <div class="mb-head"><b id="mbTitle">Distance</b><button id="mbClose" title="Close (Esc)" aria-label="Close">×</button></div>
+    <div id="mbMode" role="group" aria-label="Measurement mode"><button data-mode="distance" class="on" title="Distance along a path (D)">Distance</button><button data-mode="area" title="Area of a polygon (A)">Area</button></div>
+    <div id="mbTotal" role="status" aria-live="polite">—</div><div id="mbTotalKm"></div><div id="mbWarn" hidden>Edges cross each other - the area is not meaningful.</div>
+    <ul id="mbLegs"></ul>
+    <div class="mb-btns"><button id="mbUndo">Remove last</button><button id="mbClear">Clear</button><button id="mbCopy">Copy</button></div>
+  </div>
+  <div id="newBox" role="alertdialog" aria-labelledby="nbTitle" aria-describedby="nbMsg" hidden>
+    <div class="mb-head"><b id="nbTitle">Start a new map?</b><button id="nbClose" title="Cancel (Esc)" aria-label="Cancel">×</button></div>
+    <p id="nbMsg"></p>
+    <div class="nb-btns"><button id="nbCancel" type="button">Cancel</button><button id="nbSave" type="button">Save first</button><button id="nbGo" type="button" class="danger">Start new map</button></div>
+  </div>
+  <div id="helpBox" role="dialog" aria-label="Keyboard shortcuts" hidden>
+    <div class="mb-head"><b>Shortcuts</b><button id="hbClose" title="Close (Esc)" aria-label="Close">×</button></div>
+    <div class="hb-scroll">
+    <h5>Tools</h5>
+    <dl>
+      <dt><kbd>H</kbd><kbd>V</kbd><kbd>C</kbd><kbd>S</kbd><kbd>B</kbd><kbd>R</kbd><kbd>I</kbd><kbd>O</kbd><kbd>P</kbd><kbd>T</kbd></dt><dd>Move/navigate · select · country · subdivision · brush · mountain range · river · road · city · label</dd>
+      <dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>With the Road tool: highway · national · regional · local · track</dd>
+      <dt><kbd>M</kbd></dt><dd>Measure (then <kbd>A</kbd> area, <kbd>D</kbd> distance)</dd>
+      <dt><kbd>G</kbd></dt><dd>Biome painter (<kbd>E</kbd> erase, <kbd>[</kbd> <kbd>]</kbd> size, <kbd>1</kbd>–<kbd>0</kbd> pick biome)</dd>
+      <dt>Brush: drag · <kbd>Shift</kbd> · <kbd>Ctrl</kbd>+click</dt><dd>Paint a border · erase while painting · choose the area to paint on (<kbd>Space</kbd>+drag moves the map)</dd>
+    </dl>
+    <h5>Drawing</h5>
+    <dl>
+      <dt><kbd>Enter</kbd> · double-click</dt><dd>Finish a drawing or measurement</dd>
+      <dt><kbd>Delete</kbd> · <kbd>Backspace</kbd></dt><dd>Remove the last point while drawing</dd>
+      <dt>Drag</dt><dd>Always pans the map, even with a drawing tool</dd>
+      <dt><kbd>Shift</kbd>+drag while placing a point</dt><dd>Pull out curve handles (pen tool)</dd>
+      <dt>Double-click a point</dt><dd>Switch it between corner and curve</dd>
+      <dt><kbd>Alt</kbd> (held)</dt><dd>Bypass snapping and land clipping while drawing</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Clear, then leave the current tool</dd>
+    </dl>
+    <h5>Timeline</h5>
+    <dl>
+      <dt><kbd>,</kbd> <kbd>.</kbd> · <kbd>Shift</kbd>+<kbd>,</kbd> <kbd>.</kbd></dt><dd>Back / forward one day · one year</dd>
+      <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next event</dd>
+      <dt><kbd>{</kbd> <kbd>}</kbd></dt><dd>Previous / next change (a country appears, disappears or changes border)</dd>
+      <dt><kbd>K</kbd> · <kbd>J</kbd></dt><dd>Play forwards · backwards (speed is under the slider; "Stop at events" pauses at each event)</dd>
+      <dt>Wheel on the strip</dt><dd>Zoom the slider to a shorter stretch of time · <kbd>Shift</kbd>+wheel pans · double-click shows the whole range</dd>
+      <dt>Lanes</dt><dd>One bar per country: click a bar to select it, drag to pan; white notches mark border changes</dd>
+    </dl>
+    <h5>Files &amp; history</h5>
+    <dl>
+      <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></dt><dd>Undo · redo</dd>
+      <dt><kbd>Ctrl</kbd>+<kbd>O</kbd> · <kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>E</kbd></dt><dd>Open · save (to the same file after the first time) · export PNG</dd>
+      <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></dt><dd>Save as…</dd>
+      <dt><kbd>Ctrl</kbd>+<kbd>N</kbd></dt><dd>New blank map (the desktop app; a browser reserves Ctrl+N, use the New button there)</dd>
+    </dl>
+    <h5>Countries &amp; cities</h5>
+    <dl>
+      <dt>Show on map</dt><dd>Flies to the area and makes its border shimmer, without opening it for editing</dd>
+      <dt>Countries list</dt><dd>Hover a row to see it on the map · double-click it to fly there · <kbd>F2</kbd> renames · arrow keys move, <kbd>Enter</kbd> selects</dd>
+      <dt>Click in Move mode</dt><dd>Opens the card of the area you clicked; its breadcrumb and lists open the areas around it</dd>
+      <dt>City tool (<kbd>P</kbd>)</dt><dd>The hint names the country and regions the city will land in; a city's panel sets which areas it is the capital of</dd>
+    </dl>
+    <h5>Other</h5>
+    <dl>
+      <dt><kbd>F3</kbd></dt><dd>Show or hide the frame-time readout (frame interval and CPU ms per section)</dd>
+      <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
+    </dl>
+    </div>
+  </div>
+  <div id="exportBox" role="dialog" aria-label="Export map" hidden>
+    <div class="mb-head"><b>Export map (PNG)</b><button id="exClose" title="Close (Esc)" aria-label="Close">×</button></div>
+    <p class="ex-note">Exports exactly what you see in the map area (projection, view, layers, graticule, frame), without selection handles or the side panel.</p>
+    <div class="field"><label for="exSel">Resolution</label><select id="exSel"></select></div>
+    <div class="mb-btns ex-go"><button id="exGo">Export PNG…</button></div>
+  </div>
+  <aside id="inspector" hidden></aside>
+  <div id="toast"></div>
+  <input id="refIn" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif" hidden>
+  <input id="fileIn" type="file" accept=".cosmap,.json,application/json" hidden>
+
+  <div id="zoom">
+    <button id="zIn" aria-label="Zoom in">+</button>
+    <button id="zOut" aria-label="Zoom out">−</button>
+    <button id="zFit" aria-label="Fit world" title="Fit world">⌂</button>
+  </div>
+
+  <div id="botbar" data-open="0">
+    <div id="scalebar" hidden><div id="sbBar"></div><div id="sbLabel"></div></div>
+
+    <div id="timeline">
+      <div class="tl-top">
+        <button id="tlCollapse" aria-label="Collapse timeline" aria-expanded="true" aria-controls="tlBody">▾</button>
+        <b id="tlCode">—</b><span id="tlLong"></span><span id="tlNow" hidden></span>
+        <span class="tl-right">
+          <label class="tl-check tl-sw" title="Turn the whole history feature off: all features show, the date is frozen"><input id="tlOn" type="checkbox" checked> History</label>
+        </span>
+      </div>
+      <div class="tl-body" id="tlBody" hidden>
+        <div class="tl-body-in">
+          <div class="tl-row">
+            <button id="tlPrevEv" title="Previous event ( [ )">⏮</button>
+            <button id="tlPrevYear" title="Back one year ( Shift+, )">«</button>
+            <button id="tlPrevDay" title="Back one day ( , )">‹</button>
+            <button id="tlPlayBack" title="Play backwards ( J )" aria-pressed="false">◀</button>
+            <button id="tlPlay" title="Play forwards ( K )" aria-pressed="false">▶</button>
+            <div class="tl-trk" id="tlTrack">
+              <canvas id="tlCanvas" aria-hidden="true"></canvas>
+              <div id="tlMarkers"></div>
+              <input id="tlSlider" type="range" min="1" max="2" step="1" value="1" aria-label="Timeline">
+              <div id="tlHead" aria-hidden="true"></div>
+            </div>
+            <button id="tlNextDay" title="Forward one day ( . )">›</button>
+            <button id="tlNextYear" title="Forward one year ( Shift+. )">»</button>
+            <button id="tlNextEv" title="Next event ( ] )">⏭</button>
+          </div>
+          <div class="tl-tools">
+            <select id="tlSpeed" title="Playback speed" aria-label="Playback speed"></select>
+            <button id="tlSnap" class="tl-pill" type="button" aria-pressed="true" title="While dragging, the slider sticks to events and changes (hold Alt to bypass)">Snap</button>
+            <button id="tlStop" class="tl-pill" type="button" aria-pressed="false" title="Playback stops at each event">Stop at events</button>
+            <span class="tl-zoom">
+              <button id="tlZoomOut" type="button" title="Zoom out (mouse wheel on the strip)" aria-label="Zoom out">−</button>
+              <button id="tlZoomIn" type="button" title="Zoom in (mouse wheel on the strip)" aria-label="Zoom in">+</button>
+              <button id="tlFitView" type="button" title="Show the whole range (double-click the strip)" aria-label="Show the whole range">⌂</button>
+            </span>
+            <button id="tlLanes" class="tl-pill" type="button" aria-pressed="false" title="One bar per country under the slider: when it exists, and white notches where its border changes">Lanes</button>
+            <label class="tl-check tl-opt" title="Hide features outside their lifespan"><input id="tlFilter" type="checkbox" checked> Filter by lifespan</label>
+            <select id="tlEra" class="tl-opt" title="Jump to the start of an era" aria-label="Jump to an era"></select>
+            <input id="tlJump" type="text" placeholder="DD/MM/YYY-EE" title="Jump to a date" aria-label="Jump to date">
+            <button id="tlToday" title="Jump to today (real date on the Cosmossi calendar)">Today</button>
+            <span class="tl-hint">Wheel zooms · Shift+wheel pans · K / J play · { } jump between changes</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer id="hud">
+      <span class="proj"><b id="hudProj">Equal Earth</b><i id="hudTag">Equal-area</i></span>
+      <span id="hudCoord" class="coord">—</span>
+      <span id="backend" class="pill" data-state="browser">…</span>
+    </footer>
+  </div>
+
+  <div id="perfHud" hidden aria-live="off"></div>
+
+  <div id="loading"><div>Drawing the world…</div></div>
+  <div id="error" hidden></div>
+  <script type="module" src="js/alive.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

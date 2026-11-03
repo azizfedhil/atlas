@@ -1,0 +1,74 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Cosmossi Atlas",
+  "version": "0.1.0",
+  "identifier": "app.cosmossi.atlas",
+  "build": {
+    "frontendDist": "../web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Cosmossi Atlas",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com; frame-src 'self' https://accounts.google.com; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "Cosmossi",
+    "copyright": "Copyright (c) Cosmossi",
+    "category": "GraphicsAndDesign",
+    "shortDescription": "Interactive worldbuilding atlas",
+    "longDescription": "Cosmossi Atlas is an interactive worldbuilding atlas: map projections, countries, cities, a calendar and timeline, and distance and area measurement on a sphere of any radius.",
+    "fileAssociations": [
+      {
+        "ext": [
+          "cosmap"
+        ],
+        "name": "Cosmossi Atlas map",
+        "description": "Cosmossi Atlas map",
+        "mimeType": "application/json",
+        "role": "Editor"
+      }
+    ],
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "compression": "lzma"
+      },
+      "wix": {
+        "language": "en-US"
+      }
+    }
+  }
+}

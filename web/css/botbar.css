@@ -1,0 +1,62 @@
+/* Bottom bar. Loaded after app.css and timeline.css; behaviour in js/botbar.js.
+   One row, three parts:  [ scale bar ] [ history header ] [ projection + coordinates ].
+   Collapsed ... three small bars side by side, the history bar between the other two.
+   Expanded .... one box: the history controls (#tlBody) grow upward out of the row and the three parts share one plate.
+   Performance: only opacity / transform (on plates and content) and one grid-template-rows change on a small contained box animate;
+   no JS per frame, no backdrop-filter, no will-change. */
+
+#botbar {
+  --bb-ease: cubic-bezier(.22, .9, .3, 1);
+  position: fixed; left: 336px; right: 14px; bottom: 14px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: 0fr auto; column-gap: 8px; align-items: stretch;
+  container-type: inline-size;                       /* lets the parts shed detail in a narrow box; also contains this box's layout work */
+  pointer-events: none;                              /* the 8 px gaps between the small bars stay click-through to the map */
+  transition: left .25s ease, grid-template-rows .32s var(--bb-ease);
+}
+body:has(#panel.collapsed) #botbar { left: 70px; }
+@media (max-width: 760px) { #botbar { left: 260px; } }
+#botbar[data-open="1"] { grid-template-rows: 1fr auto; pointer-events: auto; }
+#botbar > #scalebar, #botbar .tl-top, #botbar > #hud, #botbar .tl-body { pointer-events: auto; }
+
+/* #timeline stays in the DOM (ids, classes, JS) but takes no box: its header and body become grid items of #botbar */
+#botbar > #timeline { display: contents; }
+
+/* ---- the three parts, always on row 2 ---- */
+#botbar > #scalebar, #botbar .tl-top, #botbar > #hud { position: relative; isolation: isolate; grid-row: 2; }
+#botbar > #scalebar { grid-column: 1; display: flex; flex-direction: column; justify-content: center; min-width: 168px; padding: 8px 13px 9px; }
+#botbar > #scalebar[hidden] { display: none; }
+#botbar .tl-top { grid-column: 2; min-width: 0; margin: 0; padding: 8px 13px 9px 11px; align-items: center; }
+#botbar > #hud { grid-column: 3; padding: 8px 15px; }
+
+/* ---- the expandable part, row 1 (0fr when closed, 1fr when open) ---- */
+#botbar .tl-body { grid-column: 1 / -1; grid-row: 1; min-height: 0; overflow: hidden; }
+#botbar .tl-body[hidden] { display: none; }
+#botbar .tl-body-in { padding: 9px 13px 8px; border-bottom: 1px solid var(--line); opacity: 0; transform: translateY(10px); transition: opacity .12s ease, transform .2s ease; }
+#botbar[data-open="1"] .tl-body-in { opacity: 1; transform: none; transition: opacity .24s ease .08s, transform .32s var(--bb-ease); }
+
+/* controls that moved from the header into the tools line */
+#botbar .tl-tools .tl-check { height: 24px; }
+#botbar .tl-tools #tlJump { height: 24px; padding: 0 7px; }
+#botbar .tl-tools #tlToday { padding: 0 10px; }
+
+/* ---- plates: the card look is a pseudo-element, so it can fade with opacity only ---- */
+#botbar::before, #botbar > #scalebar::after, #botbar .tl-top::after, #botbar > #hud::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--card); border: 1px solid var(--line);
+}
+/* the merged box (hidden while collapsed) */
+#botbar::before { border-radius: 14px; box-shadow: 0 8px 26px rgba(51, 67, 77, .16); opacity: 0; transition: opacity .2s ease .08s; }
+#botbar[data-open="1"]::before { opacity: 1; transition: opacity .22s ease-out; }
+/* the three small bars (hidden once merged; they leave a little after the merged box has arrived) */
+#botbar > #scalebar::after, #botbar .tl-top::after, #botbar > #hud::after { border-radius: 12px; box-shadow: 0 6px 20px rgba(51, 67, 77, .14); transition: opacity .12s ease-out; }
+#botbar[data-open="1"] > #scalebar::after, #botbar[data-open="1"] .tl-top::after, #botbar[data-open="1"] > #hud::after { opacity: 0; transition: opacity .16s ease-in .1s; }
+/* thin dividers between the parts of the merged box */
+#botbar .tl-top::before, #botbar > #hud::before { content: ""; position: absolute; left: -5px; top: 8px; bottom: 8px; width: 1px; background: var(--line); opacity: 0; pointer-events: none; transition: opacity .12s ease-out; }
+#botbar[data-open="1"] .tl-top::before, #botbar[data-open="1"] > #hud::before { opacity: 1; transition: opacity .22s ease-out .1s; }
+
+/* ---- narrow box (small window, docked 3D globe): drop detail from the readout so the history bar keeps room ---- */
+@container (max-width: 1000px) { #hud .proj i, #hud #backend { display: none; } }
+@container (max-width: 760px) { #hud .proj { display: none; } }
+
+/* ---- no motion: while the app boots (js/botbar.js adds .bb-still for two frames) and for people who asked for less motion ---- */
+#botbar.bb-still, #botbar.bb-still *, #botbar.bb-still::before, #botbar.bb-still *::before, #botbar.bb-still *::after { transition: none !important; }
+@media (prefers-reduced-motion: reduce) { #botbar, #botbar *, #botbar::before, #botbar *::before, #botbar *::after { transition: none !important; } }

@@ -1,0 +1,488 @@
+diff -ru web_orig/js/app.js "cosmossi-atlas - Copy/web/js/app.js"
+--- web_orig/js/app.js	2026-10-17 13:16:33.184341027 +0000
++++ "cosmossi-atlas - Copy/web/js/app.js"	2026-10-17 13:16:56.206336510 +0000
+@@ -1,4 +1,4 @@
+-import { PROJECTIONS, byId, unproject, fitScale, DEG, PI, HALF_PI } from './projections.js';
++import { PROJECTIONS, byId, unproject, orientationFor, fitScale, DEG, PI, HALF_PI } from './projections.js';
+ import { createRenderer, fetchPng } from './renderer.js';
+ import { createLandEdit, LAND_ID } from './landedit.js';
+ import { createOverlay } from './overlay.js';
+@@ -71,7 +71,17 @@
+ const inset = () => ($('#panel').classList.contains('collapsed') ? 56 : 322);
+ const fit = () => fitScale(def(), W - inset(), H, 0.92);
+ // the smooth camera owns every move of the view (zoom ease, fling); anything that sets the view directly calls camera.stop() first
+-const camera = createCamera({ view: state, limits: () => [fit() * 0.6, fit() * 28] });
++const camera = createCamera({ view: state, limits: () => [fit() * 0.6, fit() * 28], globe: {
++  active: () => !!def().globe,
++  // the geographic point under a screen position (null when it is off the globe)
++  pick: (sx, sy, w, h) => { const d = def(); return d.globe ? unproject(d, state.cx + (sx - w / 2) / state.scale, state.cy - (sy - h / 2) / state.scale, state.lon0, state.lat0) : null; },
++  // the orientation that puts g under a screen position; a position just outside the globe is pulled onto its edge, so a drag that leaves the globe keeps rotating it
++  place: (g, sx, sy, w, h, latHint) => {
++    const d = def(); let x = state.cx + (sx - w / 2) / state.scale, y = state.cy - (sy - h / 2) / state.scale;
++    const r = Math.hypot(x, y), lim = d.xmax * 0.9995; if (r > lim) { x *= lim / r; y *= lim / r; }
++    return orientationFor(d, g, x, y, latHint);
++  },
++} });
+ 
+ // ---------- rendering ----------
+ function render(o = {}) {
+@@ -287,7 +297,7 @@
+     ovCanvas.setPointerCapture(e.pointerId);
+     editing = land.active ? land.down(e.clientX, e.clientY, e.shiftKey) : !measure.active && !spaceDown && editor.pointerDown(e.clientX, e.clientY, e.altKey, e.shiftKey, e.ctrlKey || e.metaKey);          // grabbed a vertex / city / label?
+     drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: 0 };
+-    if (!editing) { ovCanvas.classList.add('grabbing'); camera.track(e.clientX, e.clientY, e.timeStamp); }   // release speed: positions as the browser reports them
++    if (!editing) { ovCanvas.classList.add('grabbing'); camera.track(e.clientX, e.clientY, e.timeStamp); camera.grab(e.clientX, e.clientY, W, H); }   // release speed: positions as the browser reports them; a globe remembers the point it grabbed
+   });
+   // pointer moves are coalesced to one per animation frame (high-rate mice fire several per frame); only the last position matters
+   const handleMove = frameCoalesce((cx, cy, alt) => {
+@@ -299,7 +309,7 @@
+     if (drag.moved < 4) return;                                   // below this it is still a click
+     const dx = cx - drag.x, dy = cy - drag.y;
+     drag.x = cx; drag.y = cy; panning = true;
+-    camera.panBy(dx, dy, def().globe);                            // 1:1 with the pointer; a globe rotates under it
++    if (!(def().globe && camera.dragGlobe(cx, cy, W, H))) camera.panBy(dx, dy, def().globe);   // flat: 1:1 with the pointer; a globe keeps the grabbed point under the cursor
+     if (def().globe) syncSliders();
+     requestRender();
+   });
+diff -ru web_orig/js/camera.js "cosmossi-atlas - Copy/web/js/camera.js"
+--- web_orig/js/camera.js	2026-10-17 13:16:33.184487406 +0000
++++ "cosmossi-atlas - Copy/web/js/camera.js"	2026-10-17 13:17:05.685655941 +0000
+@@ -6,7 +6,10 @@
+ // The camera owns the MOTION of the view. It writes into the same plain object the renderer reads (cx, cy, scale, lon0, lat0), so
+ // nothing else needs to know about it except the rule: any code that sets the view directly calls camera.stop() first.
+ // Time comes from an injected clock, so tools/test_camera.mjs can drive it deterministically without a browser.
+-// Flat maps pan the projected plane; globes rotate (lon0 / lat0), exactly as the drag did before.
++// Flat maps pan the projected plane. Globes rotate (lon0 / lat0) the way Google Earth does: the point grabbed under the cursor STAYS under
++// the cursor for the whole drag (not a fixed number of degrees per pixel), the wheel zooms into the point under the cursor by rotating
++// the globe (the sphere itself never slides across the screen), and a fling keeps its angular speed and decelerates.
++// The app supplies the geometry through the `globe` option: { active(), pick(sx, sy, W, H) -> [lon, lat] | null, place(g, sx, sy, W, H, latHint) -> [lon0, lat0] | null }.
+ 
+ export const ZOOM_TAU = 0.09;          // s: time constant of the zoom ease (about 63 % of a notch after 90 ms, 95 % after 270 ms)
+ export const WHEEL_K = 0.0016;         // natural-log zoom per wheel pixel: a 100 px notch is about x1.17 (the previous feel)
+@@ -35,12 +38,19 @@
+  * limits: () => [minScale, maxScale]   (the app's zoom range, relative to the fitted world)
+  * clock: () => ms
+  */
+-export function createCamera({ view, limits = () => [1e-9, 1e12], clock = () => performance.now() }) {
++export function createCamera({ view, limits = () => [1e-9, 1e12], clock = () => performance.now(), globe = null }) {
+   let zoomTarget = null;                    // log-scale target of the zoom ease, null when not zooming
+   let anchor = null;                        // { px, py, sx, sy }: projected point pinned under the screen point (sx, sy)
+   let vel = { x: 0, y: 0 };                 // fling velocity, screen px / s
+   let samples = [];                         // recent pointer positions for the release speed: { t, x, y } (raw events, not frames)
+   let lastT = 0;                            // clock value of the last step (for dt)
++  let gpin = null;                          // globe zoom: { g: [lon, lat] | null, sx, sy }, the geographic point pinned under the cursor
++  let grabGeo = null;                       // globe drag: the geographic point grabbed at pointer-down (null: grabbed off the globe)
++  let orient = [];                          // globe drag: recent { t, lon, lat } orientations for the release speed
++  let avel = { lon: 0, lat: 0 };            // globe fling: angular velocity, rad / s
++  const geo = globe;                        // (step() and panBy() take a `globe` flag that would shadow the option)
++  const onGlobe = () => !!(geo && geo.active());
++  const clampLat = (l) => Math.max(-Math.PI / 2, Math.min(Math.PI / 2, l));
+ 
+   /** Pins the projected point under (sx, sy) for the current view, unless the same point is already pinned. */
+   function pin(sx, sy, W, H) {
+@@ -60,7 +70,7 @@
+ 
+   const api = {
+     /** true while the view is still moving on its own (zoom ease or fling) */
+-    active() { return zoomTarget !== null || vel.x !== 0 || vel.y !== 0; },
++    active() { return zoomTarget !== null || vel.x !== 0 || vel.y !== 0 || avel.lon !== 0 || avel.lat !== 0; },
+ 
+     /** true while a zoom ease is still running (not a fling or a drag) */
+     zooming() { return zoomTarget !== null; },
+@@ -74,14 +84,17 @@
+     },
+ 
+     /** Cancels any ease or fling and forgets the drag history. Call before setting the view directly. */
+-    stop() { zoomTarget = null; anchor = null; vel = { x: 0, y: 0 }; samples = []; },
++    stop() { zoomTarget = null; anchor = null; gpin = null; grabGeo = null; vel = { x: 0, y: 0 }; avel = { lon: 0, lat: 0 }; samples = []; orient = []; },
+ 
+     /** Multiplies the zoom by `factor`, easing there; the projected point under (sx, sy) stays under the cursor. */
+     zoomAt(sx, sy, factor, W, H) {
+       if (!(factor > 0)) return;
+       const [min, max] = limits();
+-      if (zoomTarget === null) { vel = { x: 0, y: 0 }; samples = []; }                 // a zoom takes over from a fling
+-      pin(sx, sy, W, H);
++      if (zoomTarget === null) { vel = { x: 0, y: 0 }; avel = { lon: 0, lat: 0 }; samples = []; }   // a zoom takes over from a fling
++      if (onGlobe()) {                                                                  // globe: pin the geographic point under the cursor (rotation keeps it there)
++        if (!gpin || Math.hypot(gpin.sx - sx, gpin.sy - sy) > ANCHOR_SLOP) gpin = { g: geo.pick(sx, sy, W, H), sx, sy };
++        anchor = null;
++      } else { gpin = null; pin(sx, sy, W, H); }
+       const base = zoomTarget !== null ? zoomTarget : view.scale;
+       zoomTarget = Math.min(max, Math.max(min, base * factor));
+       lastT = clock();
+@@ -100,9 +113,29 @@
+     },
+ 
+     /** Moves the view by a drag step of (dx, dy) screen px, immediately (1:1 with the pointer). */
++    /** Globe drag start: remembers the point under the cursor (nothing when the pointer is off the globe or the map is flat). */
++    grab(sx, sy, W, H) {
++      grabGeo = onGlobe() ? geo.pick(sx, sy, W, H) : null;
++      orient = [];
++    },
++
++    /** Globe drag step: rotates so the grabbed point is under (sx, sy). Returns false when there is nothing grabbed (use panBy then). */
++    dragGlobe(sx, sy, W, H) {
++      if (!grabGeo || !onGlobe()) return false;
++      zoomTarget = null; anchor = null; gpin = null; vel = { x: 0, y: 0 }; avel = { lon: 0, lat: 0 };
++      const o = geo.place(grabGeo, sx, sy, W, H, view.lat0);
++      if (o) {
++        view.lon0 = o[0]; view.lat0 = o[1];
++        const t = clock(); orient.push({ t, lon: o[0], lat: o[1] });
++        while (orient.length > 2 && t - orient[0].t > SAMPLE_MS) orient.shift();
++      }
++      lastT = clock();
++      return true;
++    },
++
+     panBy(dx, dy, globe) {
+-      zoomTarget = null; anchor = null;
+-      vel = { x: 0, y: 0 };
++      zoomTarget = null; anchor = null; gpin = null;
++      vel = { x: 0, y: 0 }; avel = { lon: 0, lat: 0 };
+       panPx(dx, dy, globe);
+       lastT = clock();
+     },
+@@ -110,6 +143,19 @@
+     /** The pointer was released after a drag: a fast enough drag keeps moving the map and decelerates. */
+     release() {
+       const t = clock();
++      if (grabGeo) {                                                                    // globe: the fling keeps the angular speed of the last moments of the drag
++        const recent = orient.filter((p) => t - p.t <= SAMPLE_MS);
++        orient = []; samples = []; grabGeo = null;
++        if (recent.length < 2 || t - recent[recent.length - 1].t > REST_MS) return;
++        const first = recent[0], last = recent[recent.length - 1], span = last.t - first.t;
++        if (span <= 0) return;
++        const lon = wrapLon(last.lon - first.lon) / span * 1000, lat = (last.lat - first.lat) / span * 1000;
++        const sp = Math.hypot(lon * Math.cos(last.lat), lat) * view.scale;              // screen px / s at the centre of the globe
++        if (sp < FLING_MIN) return;
++        const k = Math.min(1, FLING_MAX / sp);
++        avel = { lon: lon * k, lat: lat * k }; lastT = t;
++        return;
++      }
+       const recent = samples.filter((p) => t - p.t <= SAMPLE_MS);
+       samples = [];
+       if (recent.length < 2 || t - recent[recent.length - 1].t > REST_MS) return;   // a single sample, or the pointer rested before the release
+@@ -138,7 +184,19 @@
+           view.cx = anchor.px - (anchor.sx - W / 2) / view.scale;
+           view.cy = anchor.py + (anchor.sy - H / 2) / view.scale;
+         }
+-        if (zoomTarget === null) anchor = null;
++        if (gpin && gpin.g) {                                                           // globe: rotate so the pinned point stays under the cursor
++          const o = geo.place(gpin.g, gpin.sx, gpin.sy, W, H, view.lat0);
++          if (o) { view.lon0 = o[0]; view.lat0 = o[1]; }
++        }
++        if (zoomTarget === null) { anchor = null; gpin = null; }
++        moved = true;
++      }
++      if (avel.lon !== 0 || avel.lat !== 0) {
++        view.lon0 = wrapLon(view.lon0 + avel.lon * dt);
++        view.lat0 = clampLat(view.lat0 + avel.lat * dt);
++        const k = Math.exp(-dt / FLING_TAU);
++        avel = { lon: avel.lon * k, lat: Math.abs(view.lat0) >= Math.PI / 2 ? 0 : avel.lat * k };
++        if (Math.hypot(avel.lon * Math.cos(view.lat0), avel.lat) * view.scale < FLING_MIN) avel = { lon: 0, lat: 0 };
+         moved = true;
+       }
+       if (vel.x !== 0 || vel.y !== 0) {
+diff -ru web_orig/js/clip.js "cosmossi-atlas - Copy/web/js/clip.js"
+--- web_orig/js/clip.js	2026-10-17 13:16:33.184500719 +0000
++++ "cosmossi-atlas - Copy/web/js/clip.js"	2026-10-17 13:21:10.189676781 +0000
+@@ -15,6 +15,9 @@
+ //   rings  - closed polygons in projected coordinates (fill these); empty for open lines
+ import { PI, HALF_PI, TAU, DEG, STEREO_R, wrapLon } from './projections.js';
+ 
++/** tolerance (projected units) used while a globe is being rotated: points closer than ~1 px to the last kept one are dropped. Quantised to half octaves so a zoom does not invalidate caches every frame. */
++export function moveEps(scale) { return Math.pow(2, Math.round(Math.log2(1.1 / scale) * 2) / 2); }
++
+ const STEP = 2 * DEG;                                           // sampling of the seam / pole line / horizon arcs
+ const CAP = { orthographic: HALF_PI, stereographic: 2 * Math.atan(STEREO_R / 2), 'lambert-azimuthal': PI - 1e-6 };   // angular radius of the visible cap
+ 
+@@ -132,11 +135,21 @@
+   for (let j = 0; j < n; j++) { const la = d[2 * j + 1], co = Math.cos(la); u[3 * j] = co * Math.cos(d[2 * j]); u[3 * j + 1] = co * Math.sin(d[2 * j]); u[3 * j + 2] = Math.sin(la); }
+   unitCache.set(d, u); return u;
+ }
+-function clipGlobe(def, d, closed, lon0, lat0, wantLeft) {
++function clipGlobe(def, d, closed, lon0, lat0, wantLeft, eps = 0) {
+   const n = d.length / 2, kc = Math.cos(CAP[def.id] ?? HALF_PI), kIn = kc + 1e-7, R = def.xmax;
+   const cl = Math.cos(lat0), c = [cl * Math.cos(lon0), cl * Math.sin(lon0), Math.sin(lat0)];
+   const U = unitVecs(d), vec = (j) => [U[3 * j], U[3 * j + 1], U[3 * j + 2]];
+   const fwd = (lon, lat) => def.fwd(lon - lon0, lat, lat0);
++  // visible points are projected from their unit vectors with the view's east / north axes: a few multiplications, no sin / cos
++  // (the same numbers as def.fwd; this was the per-frame cost of rotating a globe)
++  const ex = -Math.sin(lon0), ey = Math.cos(lon0), nx = -Math.sin(lat0) * Math.cos(lon0), ny = -Math.sin(lat0) * Math.sin(lon0), nz = Math.cos(lat0);
++  const ortho = def.id === 'orthographic', lamb = def.id === 'lambert-azimuthal', eps2 = eps * eps;
++  const fast = (j, f) => {
++    const x = U[3 * j] * ex + U[3 * j + 1] * ey, y = U[3 * j] * nx + U[3 * j + 1] * ny + U[3 * j + 2] * nz;
++    if (ortho) return [x, y];
++    const k = lamb ? Math.sqrt(2 / (1 + f)) : 2 / (1 + f);
++    return [k * x, k * y];
++  };
+   const chains = [];
+   let cur = [], curMeta = { s0: 0, a0: 0 }, cross = 0, prev = null, prevF = 0;
+   const count = closed ? n + 1 : n;
+@@ -153,7 +166,10 @@
+         else { cur.push(px); chains.push({ pts: cur, s0: curMeta.s0, a0: curMeta.a0, s1: 1, a1: th }); cross++; cur = []; curMeta = { s0: -2, a0: 0 }; }
+       }
+     }
+-    if (vis) { const p = fwd(d[2 * j], d[2 * j + 1]); if (p) cur.push(p); }
++    if (vis) {
++      const p = fast(j, f), q = cur.length ? cur[cur.length - 1] : null;
++      if (!eps || !q || (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 >= eps2) cur.push(p);     // moving: drop points closer than eps to the last kept one
++    }
+     prev = v; prevF = f;
+   }
+   if (cross && curMeta.s0 === -2) { cur = []; curMeta = { s0: 0, a0: 0 }; }
+@@ -186,7 +202,8 @@
+ }
+ 
+ /** see the header. d: flat [lon, lat, ...] radians; closed: ring (true) or open line (false); lon0 / lat0: view orientation in radians */
+-export function clipRing(def, d, closed, lon0, lat0) {
+-  const left = () => interiorLeft(d);
+-  return def.globe ? clipGlobe(def, d, closed, lon0, lat0, left) : clipFlat(def, d, closed, lon0, left);
++const leftCache = new WeakMap();      // ring -> interiorLeft: it only depends on the ring, not on the view (it was recomputed, with trig per point, on every frame of a rotation)
++export function clipRing(def, d, closed, lon0, lat0, eps = 0) {
++  const left = () => { let r = leftCache.get(d); if (r === undefined) { r = interiorLeft(d); leftCache.set(d, r); } return r; };
++  return def.globe ? clipGlobe(def, d, closed, lon0, lat0, left, eps) : clipFlat(def, d, closed, lon0, left);
+ }
+diff -ru web_orig/js/editor.js "cosmossi-atlas - Copy/web/js/editor.js"
+--- web_orig/js/editor.js	2026-10-17 13:16:33.184562564 +0000
++++ "cosmossi-atlas - Copy/web/js/editor.js"	2026-10-17 13:21:15.733240284 +0000
+@@ -3,7 +3,7 @@
+ // projected cache per feature.
+ import { project, unproject, DEG, wrapLon } from './projections.js';
+ import { densify, toVec, fromVec, ringAreaKm2 } from './spherical.js';
+-import { clipRing } from './clip.js';
++import { clipRing, moveEps } from './clip.js';
+ import { visibleRings } from './vectors.js';
+ import { spineOf, thicknessPx, layoutName } from './labelspine.js';
+ import { createLru } from './perf.js';
+@@ -163,12 +163,12 @@
+     const d = densify(flatOf(f), closed, 0.5); dens.set(f, { rev, closed, d }); return d;
+   };
+   /** densified, projected outline of a country (cached until geometry or view orientation changes) */
+-  function projRing(f, v) {
+-    const key = [v.def.id, v.lon0.toFixed(5), v.def.globe ? v.lat0.toFixed(5) : 0, revs.get(f) || 0].join('|');
++  function projRing(f, v, eps = 0) {                                             // eps > 0: coarser outline for a globe being rotated
++    const key = [v.def.id, v.lon0.toFixed(5), v.def.globe ? v.lat0.toFixed(5) : 0, revs.get(f) || 0, eps].join('|');
+     const hit = projCache.get(f);
+     if (hit && hit.key === key) return hit;
+     // clipped exactly at the seam / horizon: `chains` are open border pieces (stroke), `rings` are closed along the map edge (fill)
+-    const closed = !isLine(f), r = clipRing(v.def, densOf(f, closed), closed, v.lon0, lat0(v)), pts = [];
++    const closed = !isLine(f), r = clipRing(v.def, densOf(f, closed), closed, v.lon0, lat0(v), eps), pts = [];
+     for (const ch of r.chains) { if (pts.length) pts.push(null); for (const p of ch) pts.push(p); }
+     const bb = [Infinity, Infinity, -Infinity, -Infinity];                  // projected bounds of the clipped rings
+     for (const ring of r.rings) for (const p of ring) { if (p[0] < bb[0]) bb[0] = p[0]; if (p[1] < bb[1]) bb[1] = p[1]; if (p[0] > bb[2]) bb[2] = p[0]; if (p[1] > bb[3]) bb[3] = p[1]; }
+@@ -851,13 +851,13 @@
+ 
+   // ---------- land mask: area fills are clipped to land (coast contours, even-odd so lakes are holes) ----------
+   let landKey = '', landPath = null;
+-  function landMask(v) {                                                             // per-ring paths + projected bounds (view independent)
++  function landMask(v, eps = 0) {                                                             // per-ring paths + projected bounds (view independent)
+     const coast = getCoast && getCoast(); if (!coast) return null;
+-    const key = v.def.id + '|' + v.lon0.toFixed(5) + '|' + (v.def.globe ? v.lat0.toFixed(5) : 0);
++    const key = v.def.id + '|' + v.lon0.toFixed(5) + '|' + (v.def.globe ? v.lat0.toFixed(5) : 0) + '|' + eps;
+     if (key === landKey) return landPath;
+     const rings = [], la0 = lat0(v);
+     for (const p of coast) {                                                         // every coast ring is cut exactly at the seam / horizon and closed along it
+-      for (const ring of clipRing(v.def, p, true, v.lon0, la0).rings) {
++      for (const ring of clipRing(v.def, p, true, v.lon0, la0, eps).rings) {
+         if (ring.length < 3) continue;
+         const path = new Path2D(), bb = [Infinity, Infinity, -Infinity, -Infinity];
+         path.moveTo(ring[0][0], ring[0][1]);
+@@ -868,8 +868,8 @@
+     landKey = key; landPath = rings; return rings;
+   }
+   /** runs fn with the canvas clipped to land (a no-op when clipping is off or the coast is not loaded) */
+-  function onLand(ctx, v, fn, skip = false) {
+-    const rings = clipOn && !skip ? landMask(v) : null;       // skip: no clip at all (and no mask build) - used while a globe is being rotated
++  function onLand(ctx, v, fn, eps = 0) {
++    const rings = clipOn ? landMask(v, eps) : null;           // eps > 0: the coarser mask of a globe being rotated (the fills are still clipped to land, borders never run over the sea)
+     if (!rings) { fn(); return; }
+     const m = visibleRings(rings, v, 0.5) || new Path2D();   // only the land rings that reach the painted area: a clip over the whole coast is what made every repaint slow (even-odd, so a ring outside the view cannot matter)
+     const T = ctx.getTransform(), k = v.scale * T.a;
+@@ -926,7 +926,8 @@
+   function drawRanges(ctx, v, L) {
+     const ranges = L.filter((f) => f.kind === 'range'); if (!ranges.length) return;
+     const dpr = ctx.getTransform().a, FAR = 20000;
+-    const items = ranges.map((f) => { const c = projRing(f, v); return [f, c, unitPath(c), strokePath(c)]; });
++    const meps = v.def.globe && (v.interacting || v.cheap) ? moveEps(v.scale) : 0;
++    const items = ranges.map((f) => { const c = projRing(f, v, meps); return [f, c, unitPath(c), strokePath(c)]; });
+     const blur = Math.min(14, Math.max(4, 6 + 2 * Math.log2(Math.max(v.zoomRel || 1, 1))));
+     onLand(ctx, v, () => inUnits(ctx, v, (px) => {
+       for (const [f, c, path] of items) {
+@@ -941,7 +942,7 @@
+         }
+         ctx.restore();
+       }
+-    }), (v.interacting || v.cheap) && v.def.globe);
++    }), meps);
+     if (sel) for (const [f, , , path] of items) {
+       if (sel.id !== f.id) continue;
+       inUnits(ctx, v, (px) => {
+@@ -974,11 +975,12 @@
+     // countries and subdivisions (shallow first): fills + outlines clipped to land in ONE clip, drawn from cached unit paths
+     const t0 = now();
+     const polys = L.filter(isPoly).map((f) => [f, f.kind === 'country' ? 0 : depthOf(f)]).sort((p, q) => p[1] - q[1]);
+-    const items = polys.map(([f, d]) => { const c = projRing(f, v); return [f, d, c, unitPath(c), strokePath(c)]; });
++    const peps = v.def.globe && fast ? moveEps(v.scale) : 0;
++    const items = polys.map(([f, d]) => { const c = projRing(f, v, peps); return [f, d, c, unitPath(c), strokePath(c)]; });
+     const pathOf = new Map(items.map(([f, , , p]) => [f.id, p])), holeOf = new Map();          // a host's fill gets its enclaves as holes
+     for (const [f] of items) if (f.enclaveOf && pathOf.has(f.id) && pathOf.has(f.enclaveOf)) (holeOf.get(f.enclaveOf) || holeOf.set(f.enclaveOf, []).get(f.enclaveOf)).push(pathOf.get(f.id));
+     const dpr0 = ctx.getTransform().a || 1, M = th.map, popOf = (h) => { const k = h + th.id; let r = pops.get(k); if (!r) pops.set(k, (r = popHex(h, M.sat, M.light))); return r; };
+-    const moveGlobe = fast && v.def.globe;            // a globe being rotated is repainted live every frame: use the cheap path (no land clip, flat fills, no names)
++    const moveGlobe = fast && v.def.globe;            // a globe being rotated is repainted live every frame: cheap path: flat fills, no names, coarser outlines (still clipped to land)
+     if (items.length) onLand(ctx, v, () => inUnits(ctx, v, (px) => {
+       for (const [f, d, c, path, spath] of items) {
+         if (!reachesView(c, v)) continue;
+@@ -994,7 +996,7 @@
+         ctx.strokeStyle = mix(base, M.border, sub ? M.borderMix * 0.7 : M.borderMix); ctx.lineWidth = (sub ? Math.max(0.8, 1.15 - 0.15 * d) : 1.9) * px;
+         ctx.setLineDash(d >= 2 ? [5 * px, 3 * px] : []); ctx.stroke(spath); ctx.setLineDash([]);
+       }
+-    }), moveGlobe);
++    }), peps);
+     const t1 = now();
+     drawRanges(ctx, v, L);
+     const t2 = now();
+@@ -1099,7 +1101,7 @@
+       const fs = f.rank === 'capital' ? 12.5 : f.rank === 'city' ? 11 : 10;
+       ctx.font = `${f.rank === 'capital' || isSubCap ? 600 : 500} ${fs}px system-ui, "Segoe UI", sans-serif`;
+       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+-      if (!isSel && z < NAME_Z) continue;                                         // zoomed out: dots only
++      if (!isSel && (z < NAME_Z || moveGlobe)) continue;                                         // zoomed out: dots only
+       const tw = ctx.measureText(f.name).width, bx = s[0] + r + 6, box = [bx - 2, s[1] - fs * 0.6, bx + tw + 2, s[1] + fs * 0.6];
+       if (!isSel && placed.some((q) => box[0] < q[2] && box[2] > q[0] && box[1] < q[3] && box[3] > q[1])) continue;      // would sit on another name
+       placed.push(box);
+diff -ru web_orig/js/overlay.js "cosmossi-atlas - Copy/web/js/overlay.js"
+--- web_orig/js/overlay.js	2026-10-17 13:16:33.184692414 +0000
++++ "cosmossi-atlas - Copy/web/js/overlay.js"	2026-10-17 13:21:10.190610109 +0000
+@@ -7,6 +7,7 @@
+ // one is painted centred on the current view (instead of falling back to a slow live paint every frame).
+ import { graticule, outline } from './projections.js';
+ import { buildPaths, visibleRings } from './vectors.js';
++import { moveEps } from './clip.js';
+ import { THEMES } from './themes.js';
+ import { plog } from './perflog.js';
+ 
+@@ -46,8 +47,9 @@
+       ctx.stroke();
+     }
+     if (vec && (v.showCoast || v.showRivers)) {
+-      const vk = v.def.id + '|' + orient + '|' + v.pole;
+-      if (vk !== vKey) { vKey = vk; vPaths = buildPaths(v.def, vec, v.lon0, v.lat0, v.pole == null ? 4 : v.pole); }
++      const eps = v.def.globe && (v.cheap || v.interacting) ? moveEps(v.scale) : 0;       // a rotating globe: fewer, coarser segments (what is rasterised every frame is what costs)
++      const vk = v.def.id + '|' + orient + '|' + v.pole + '|' + eps;
++      if (vk !== vKey) { vKey = vk; vPaths = buildPaths(v.def, vec, v.lon0, v.lat0, v.pole == null ? 4 : v.pole, eps); }
+       const k = v.scale * dpr, grow = Math.min(1.6, Math.max(1, 1 + 0.12 * Math.log2(Math.max(v.zoomRel, 1))));
+       ctx.setTransform(k, 0, 0, -k, dpr * (v.w / 2 - v.cx * v.scale), dpr * (v.h / 2 + v.cy * v.scale));
+       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+@@ -59,7 +61,7 @@
+       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+     }
+     const tb = plog.on ? performance.now() : 0;
+-    if (baseDraw && !v.light) baseDraw(ctx, v);
++    if (baseDraw) baseDraw(ctx, v);          // a rotating globe keeps its countries: the editor paints them in its cheap style (flat fills, no names) while v.interacting
+     if (plog.on) { parts.grat = tb - parts.t0; parts.base = performance.now() - tb; }          // light: a globe being rotated paints graticule + coast + rivers only; the full picture returns at rest
+   }
+   function paintTop(ctx, v, interactive = true) {
+diff -ru web_orig/js/projections.js "cosmossi-atlas - Copy/web/js/projections.js"
+--- web_orig/js/projections.js	2026-10-17 13:16:33.184743091 +0000
++++ "cosmossi-atlas - Copy/web/js/projections.js"	2026-10-17 13:16:33.271274758 +0000
+@@ -238,6 +238,36 @@
+   return r ? [wrapLon(r[0] + lon0), r[1]] : null;
+ }
+ 
++/** globes: the angular distance (rad) from the view centre of the point that projects to radius rho; null outside the globe */
++export function angularDistance(def, rho) {
++  if (!def.globe || rho > def.xmax) return null;
++  if (def.id === 'orthographic') return Math.asin(Math.min(1, rho));
++  if (def.id === 'lambert-azimuthal') return 2 * Math.asin(Math.min(1, rho / 2));
++  return 2 * Math.atan(rho / 2);                                  // stereographic
++}
++
++/** globes: the orientation [lon0, lat0] (rad, north stays up) that puts the geographic point g = [lon, lat] at projected point (x, y).
++ *  Closed form (the spherical "destination point" equations solved for the centre), so a drag can keep the grabbed point under the
++ *  cursor exactly, anywhere on the globe. Of the two possible centres it returns the one with the latitude nearest latHint.
++ *  null when (x, y) lies outside the globe. */
++export function orientationFor(def, g, x, y, latHint = 0) {
++  const c = angularDistance(def, Math.hypot(x, y));
++  if (c === null) return null;
++  const th = Math.atan2(x, y);                                    // bearing of g seen from the centre (clockwise from north)
++  const sg = Math.sin(g[1]), A = Math.cos(c), B = Math.sin(c) * Math.cos(th), R = Math.hypot(A, B);
++  if (R < 1e-12) return null;
++  const delta = Math.atan2(B, A), a = Math.asin(Math.max(-1, Math.min(1, sg / R)));   // A sin(l) + B cos(l) = R sin(l + delta) = sin(lat of g)
++  let lat = null;
++  for (const s of [a - delta, PI - a - delta]) {
++    const w = wrapLon(s);
++    if (Math.abs(w) <= HALF_PI + 1e-9 && (lat === null || Math.abs(w - latHint) < Math.abs(lat - latHint))) lat = w;
++  }
++  if (lat === null) return null;
++  lat = Math.max(-HALF_PI, Math.min(HALF_PI, lat));
++  const dl = Math.atan2(Math.sin(th) * Math.sin(c) * Math.cos(lat), Math.cos(c) - Math.sin(lat) * sg);
++  return [wrapLon(g[0] - dl), lat];
++}
++
+ /** closed polyline (projected coords) tracing the edge of the projected world */
+ export function outline(def, lon0 = 0, lat0 = 0, n = 240) {
+   const pts = [];
+diff -ru web_orig/js/vectors.js "cosmossi-atlas - Copy/web/js/vectors.js"
+--- web_orig/js/vectors.js	2026-10-17 13:16:33.184848191 +0000
++++ "cosmossi-atlas - Copy/web/js/vectors.js"	2026-10-17 13:21:10.190166827 +0000
+@@ -1,5 +1,5 @@
+ // Vector coastlines / rivers: loaded once in lon/lat, projected on demand into Path2D objects.
+-import { project, DEG } from './projections.js';
++import { project, DEG, HALF_PI, STEREO_R } from './projections.js';
+ 
+ export async function loadVectors(url) {
+   const res = await fetch(url);
+@@ -11,11 +11,42 @@
+   return { coast: j.coast.map(dec), rivers: j.rivers.map((r) => ({ w: r.w, p: dec(r.p) })) };
+ }
+ 
++const unitCache = new WeakMap();
++
+ /** Path2Ds in projected coordinates for one projection + orientation (rebuilt only when that changes). */
+-export function buildPaths(def, vec, lon0, lat0, cap = 4) {          // cap: points beyond this latitude (rad) are left out (polar cap)
++export function buildPaths(def, vec, lon0, lat0, cap = 4, eps = 0) {          // cap: points beyond this latitude (rad) are left out (polar cap)
+   const jump = 0.5 * Math.max(def.xmax, def.ymax);
+   const rivers = [new Path2D(), new Path2D(), new Path2D()], coastRings = [];
+-  const add = (path, p, bb) => {
++  const units = (p) => {                                              // [x, y, z] of every point, built once per array
++    let u = unitCache.get(p); if (u && u.length === (p.length / 2) * 3) return u;
++    u = new Float64Array((p.length / 2) * 3);
++    for (let i = 0, j = 0; i < p.length; i += 2, j += 3) { const co = Math.cos(p[i + 1]); u[j] = co * Math.cos(p[i]); u[j + 1] = co * Math.sin(p[i]); u[j + 2] = Math.sin(p[i + 1]); }
++    unitCache.set(p, u); return u;
++  };
++  const cl = Math.cos(lat0), c0 = cl * Math.cos(lon0), c1 = cl * Math.sin(lon0), c2 = Math.sin(lat0);          // view centre
++  const ex = -Math.sin(lon0), ey = Math.cos(lon0), nx = -Math.sin(lat0) * Math.cos(lon0), ny = -Math.sin(lat0) * Math.sin(lon0), nz = Math.cos(lat0);
++  const ortho = def.id === 'orthographic', lamb = def.id === 'lambert-azimuthal', sinCap = cap >= HALF_PI ? 2 : Math.sin(cap);
++  const addGlobe = (path, p, bb) => {                                  // same result as add(), from unit vectors: a globe rotation repaints these every frame
++    const u = units(p), n = p.length / 2, e2 = eps * eps;
++    let on = false, lx = 0, ly = 0;
++    for (let i = 0; i < n; i++) {
++      const ux = u[3 * i], uy = u[3 * i + 1], uz = u[3 * i + 2];
++      if (uz > sinCap || uz < -sinCap) { on = false; continue; }
++      const f = c0 * ux + c1 * uy + c2 * uz;
++      let x = ux * ex + uy * ey, y = ux * nx + uy * ny + uz * nz;
++      if (ortho) { if (f < 0) { on = false; continue; } }
++      else {
++        const d = 1 + f; if (d < 1e-9) { on = false; continue; }
++        const k = lamb ? Math.sqrt(2 / d) : 2 / d; x *= k; y *= k;
++        if (!lamb && x * x + y * y > STEREO_R * STEREO_R) { on = false; continue; }
++      }
++      if (on && e2 && (x - lx) ** 2 + (y - ly) ** 2 < e2) continue;          // moving: a point closer than eps to the last one adds nothing visible
++      if (on) path.lineTo(x, y); else path.moveTo(x, y);
++      on = true; lx = x; ly = y;
++      if (bb) { if (x < bb[0]) bb[0] = x; if (y < bb[1]) bb[1] = y; if (x > bb[2]) bb[2] = x; if (y > bb[3]) bb[3] = y; }
++    }
++  };
++  const addFlat = (path, p, bb) => {
+     let on = false, lx = 0, ly = 0;
+     for (let i = 0; i < p.length; i += 2) {
+       if (Math.abs(p[i + 1]) > cap) { on = false; continue; }
+@@ -27,6 +58,7 @@
+       if (bb) { if (lx < bb[0]) bb[0] = lx; if (ly < bb[1]) bb[1] = ly; if (lx > bb[2]) bb[2] = lx; if (ly > bb[3]) bb[3] = ly; }
+     }
+   };
++  const add = def.globe ? addGlobe : addFlat;
+   // one Path2D per coast ring (coast and lakes) with its projected bounds, so a paint can skip every ring that is off screen or smaller than a pixel
+   for (const p of vec.coast) { const path = new Path2D(), bb = [Infinity, Infinity, -Infinity, -Infinity]; add(path, p, bb); if (bb[0] <= bb[2]) coastRings.push({ path, bb }); }
+   for (const r of vec.rivers) add(rivers[r.w - 1], r.p);

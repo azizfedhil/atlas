@@ -1,0 +1,26 @@
+// node tools/test_measure_area_ui.mjs -- logic test of the area mode of measureui.js with a stubbed canvas (no browser needed).
+import * as P from '../web/js/projections.js';
+import { createMeasureTool } from '../web/js/measureui.js';
+globalThis.Path2D = class { moveTo() {} lineTo() {} closePath() {} };
+let fail = 0, checks = 0; const ok = (c, m) => { checks++; if (!c) { fail++; console.log('FAIL', m); } };
+const def = (P.byId || ((id) => P.PROJECTIONS.find((p) => p.id === id)))('equirect') || P.PROJECTIONS[0];
+const view = { def, cx: 0, cy: 0, scale: 4, lon0: 0, lat0: 0, w: 1440, h: 720 };
+let last = null, renders = 0;
+const t = createMeasureTool({ getView: () => view, getPlanetKm: () => 6371, getCities: () => [], formatKm: (k) => k.toFixed(1) + ' km', formatArea: (k) => k.toFixed(0) + ' km2', requestRender: () => renders++, onChange: (i) => { last = i; } });
+const click = (lon, lat) => { const p = P.project(def, lon * P.DEG, lat * P.DEG, 0, 0); t.click(view.w / 2 + (p[0] - view.cx) * view.scale, view.h / 2 - (p[1] - view.cy) * view.scale); };
+t.setActive(true); ok(t.mode === 'distance', 'starts in distance mode');
+t.setMode('area'); ok(t.mode === 'area' && last.mode === 'area', 'switches to area');
+t.setMode('bogus'); ok(t.mode === 'area', 'ignores an unknown mode');
+click(0, 0); click(40, 0); ok(last.area.areaKm2 === 0 && last.legs.length === 1, 'two points: no area yet');
+click(40, 30); click(0, 30);
+const a = last.area; ok(a.vertexCount === 4 && a.areaKm2 > 1e6 && !a.selfIntersecting, 'a 4-corner box has an area');
+ok(last.legs.length === 4, 'closed ring has 4 edges'); ok(Math.abs(last.legs.reduce((s, g) => s + g.km, 0) - a.perimeterKm) < 1e-6, 'edge lengths add up to the perimeter');
+const text = t.summaryText(); ok(text.startsWith('Area:') && text.split('\n').length === 5, 'clipboard text has a header and 4 edges');
+const calls = []; const ctx = new Proxy({}, { get: (_, k) => (k === 'measureText' ? () => ({ width: 40 }) : (...x) => calls.push(k)), set: () => true });
+t.draw(ctx, { ...view }); ok(calls.includes('fill') && calls.includes('stroke'), 'draw fills and strokes the polygon');
+t.setMode('distance'); ok(last.mode === 'distance' && last.legs.length === 3 && last.points.length === 4, 'back to distance keeps the points as an open path');
+t.setMode('area'); t.clear(); click(0, 0); click(10, 10); click(10, 0); click(0, 10);
+ok(last.area.selfIntersecting, 'bow tie flagged'); t.draw(ctx, { ...view }); 
+t.removeLast(); ok(last.points.length === 3 && !last.area.selfIntersecting, 'removing a point un-crosses it');
+t.setActive(false); ok(last.active === false, 'closing resets');
+console.log(fail ? `${fail} of ${checks} checks FAILED` : `all ${checks} area-UI checks passed`); process.exit(fail ? 1 : 0);

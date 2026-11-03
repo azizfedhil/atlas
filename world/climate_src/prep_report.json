@@ -1,0 +1,169 @@
+{
+ "overlap_px": 129278,
+ "gap_px": 96177,
+ "paint_on_sea_px": 324,
+ "land_px": 2075514,
+ "smoothing_changed_px": 6561,
+ "classes": [
+  {
+   "id": "Tropical_rainforest",
+   "code": "Af",
+   "name": "Tropical rainforest",
+   "source": "Tropical Rainforest Af.png",
+   "painted_pct_of_map": 1.019,
+   "final_pct_of_land": 2.26,
+   "lat_north": 10.5,
+   "lat_south": -26.0
+  },
+  {
+   "id": "Tropical_monsoon",
+   "code": "Am",
+   "name": "Tropical monsoon",
+   "source": "Tropical Monsoon Am.png",
+   "painted_pct_of_map": 0.984,
+   "final_pct_of_land": 2.413,
+   "lat_north": 14.5,
+   "lat_south": -37.7
+  },
+  {
+   "id": "Tropical_savanna",
+   "code": "Aw",
+   "name": "Tropical savanna",
+   "source": "tropical savannah Aw.png",
+   "painted_pct_of_map": 1.503,
+   "final_pct_of_land": 3.196,
+   "lat_north": 36.0,
+   "lat_south": -25.9
+  },
+  {
+   "id": "hot_dry_desert",
+   "code": "BWh",
+   "name": "Hot desert",
+   "source": "Hot Desert Bwh.png",
+   "painted_pct_of_map": 0.977,
+   "final_pct_of_land": 2.245,
+   "lat_north": 29.0,
+   "lat_south": -29.4
+  },
+  {
+   "id": "hyper_arid",
+   "code": "BWh+",
+   "name": "Alduran hyper-desert",
+   "source": "alduran Hyperdesert.png",
+   "painted_pct_of_map": 0.679,
+   "final_pct_of_land": 1.609,
+   "lat_north": 29.1,
+   "lat_south": 6.4
+  },
+  {
+   "id": "semi_arid",
+   "code": "BSh",
+   "name": "Hot semi-arid steppe",
+   "source": "Hot Semi Arid Steppe BSh.png",
+   "painted_pct_of_map": 1.035,
+   "final_pct_of_land": 2.075,
+   "lat_north": 28.2,
+   "lat_south": -29.4
+  },
+  {
+   "id": "steppe",
+   "code": "BSk",
+   "name": "Steppe",
+   "source": "steppe.png",
+   "painted_pct_of_map": 0.397,
+   "final_pct_of_land": 0.983,
+   "lat_north": -15.2,
+   "lat_south": -36.5
+  },
+  {
+   "id": "mediterannean",
+   "code": "Cs",
+   "name": "Mediterranean",
+   "source": "Mediterannean Csa Csb.png",
+   "painted_pct_of_map": 1.921,
+   "final_pct_of_land": 4.228,
+   "lat_north": 47.5,
+   "lat_south": -29.7
+  },
+  {
+   "id": "humid_subtropical",
+   "code": "Cfa",
+   "name": "Humid subtropical",
+   "source": "Humid Subtropical Sfa.png",
+   "painted_pct_of_map": 2.159,
+   "final_pct_of_land": 5.336,
+   "lat_north": 30.3,
+   "lat_south": -60.5
+  },
+  {
+   "id": "oceanic",
+   "code": "Cfb",
+   "name": "Oceanic",
+   "source": "Oceanic Cfb Cfc.png",
+   "painted_pct_of_map": 1.39,
+   "final_pct_of_land": 3.247,
+   "lat_north": 44.8,
+   "lat_south": -71.2
+  },
+  {
+   "id": "hot_continental",
+   "code": "Dfa",
+   "name": "Hot-summer humid continental",
+   "source": "Hot Summer Humid Contitnental Dfa.png",
+   "painted_pct_of_map": 1.674,
+   "final_pct_of_land": 4.027,
+   "lat_north": 54.0,
+   "lat_south": -45.1
+  },
+  {
+   "id": "humid_continental",
+   "code": "Dfb",
+   "name": "Humid continental",
+   "source": "Humid Continental Dfb.png",
+   "painted_pct_of_map": 3.503,
+   "final_pct_of_land": 7.976,
+   "lat_north": 64.2,
+   "lat_south": -47.9
+  },
+  {
+   "id": "subarctic",
+   "code": "Dfc",
+   "name": "Subarctic",
+   "source": "Subarctic.png",
+   "painted_pct_of_map": 1.852,
+   "final_pct_of_land": 4.108,
+   "lat_north": -49.4,
+   "lat_south": -85.0
+  },
+  {
+   "id": "Coniferous_forest",
+   "code": "Dfc-b",
+   "name": "Boreal forest (taiga)",
+   "source": "Boreal Forest.png",
+   "painted_pct_of_map": 6.831,
+   "final_pct_of_land": 16.07,
+   "lat_north": 85.0,
+   "lat_south": -68.4
+  },
+  {
+   "id": "tundra",
+   "code": "ET",
+   "name": "Tundra",
+   "source": "Tundra Et.png",
+   "painted_pct_of_map": 6.838,
+   "final_pct_of_land": 13.666,
+   "lat_north": 85.0,
+   "lat_south": -83.9
+  },
+  {
+   "id": "arctic",
+   "code": "EF",
+   "name": "Ice cap",
+   "source": "Ice cap.png",
+   "painted_pct_of_map": 11.222,
+   "final_pct_of_land": 26.361,
+   "lat_north": 89.9,
+   "lat_south": -89.9
+  }
+ ]
+}

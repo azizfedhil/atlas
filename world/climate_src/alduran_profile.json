@@ -1,0 +1,21 @@
+{
+ "_comment": "Hand-set climate of the Alduran hyper-desert (a world-specific biome; the simulator cannot produce it). Edit freely; tools/reconcile.py and tools/alduran_patch.py read this file.",
+ "months": "0 = month after the northern winter solstice (Earth: January); the hottest month is index 6 (July), the coldest index 0 (January)",
+ "summer_day_high_c": 53,
+ "summer_day_range_c": [51, 55],
+ "summer_day_spike_c": 60,
+ "summer_night_low_c": 17.5,
+ "summer_night_range_c": [15, 20],
+ "winter_day_high_c": 43,
+ "winter_day_range_c": [41, 45],
+ "winter_night_low_c": 14.5,
+ "winter_night_range_c": [12, 17],
+ "_figures_note": "the single numbers are the middle of the typical ranges; the map's temperature layer shows the monthly MEAN of day and night, the day / night figures are shown on hover",
+ "hottest_month_index": 6,
+ "annual_rain_mm": 20,
+ "_rain_note": "a few strong flash rains, 5-10 minutes each, about one every one or two years; the monthly climate is a flat 20 mm / 12",
+ "lapse_c_per_km": 0,
+ "blend_cells": 8,
+ "blend_note": "the hand-set climate fades in over this many 1024x512 cells (~0.35 deg each) INSIDE the border of the hyper-desert; it is 0 on the border and 1 from blend_cells inward. Nothing outside the hyper-desert is changed.",
+ "lapse_note": "0 = your day/night figures are used as the real surface values everywhere inside Alduran, including on its high ground. Set 6.5 to cool the high parts."
+}

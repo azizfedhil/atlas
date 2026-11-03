@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/png" href="../icon.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmossi — 3D globe</title>
+    <meta name="description" content="Import your own equirectangular heightmap onto a 3D globe with automatic climate simulation — wind, precipitation, temperature, and K&ouml;ppen classification. Free, in your browser.">
+    <meta name="keywords" content="heightmap import, equirectangular projection, climate simulation, world generator, terrain viewer, planet builder, Three.js, worldbuilding tool">
+    <meta name="author" content="World Orogen">
+    <meta name="theme-color" content="#0a0e17">
+
+    <!-- Open Graph -->
+
+    <!-- Twitter Card -->
+    <link rel="stylesheet" href="styles.css">
+    <script src="support-check.js"></script>
+</head>
+<body>
+    <nav id="topNav">
+        <span class="nav-tab active">Cosmossi — 3D globe</span>
+    </nav>
+    <div id="buildOverlay" class="build-overlay hidden">
+        <div class="build-overlay-inner">
+            <div class="build-overlay-spinner"></div>
+            <div class="build-overlay-title">Importing heightmap</div>
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="buildBarFill"></div>
+            </div>
+            <div class="progress-label" id="buildBarLabel"></div>
+        </div>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div id="ui">
+        <div id="sheetHandle" class="sheet-handle"><span></span></div>
+        <div id="sidebarHeader">
+            <div>
+                <h2>Cosmossi</h2>
+                <div class="sub">3D globe · linked to the atlas</div>
+            </div>
+            <button id="sidebarToggle" title="Collapse panel">&#x00AB;</button>
+        </div>
+        <div id="sidebarContent">
+        <div id="viewStripSlot"></div>
+        <details class="section" id="cmAtlas" open>
+            <summary>Atlas</summary>
+            <div class="section-body">
+                <label class="cm-row"><input type="checkbox" id="cmShow" checked> Show the atlas&rsquo;s countries on the globe</label>
+                <div class="cm-row"><span>Country opacity</span><input type="range" id="cmAlpha" min="0" max="100" value="100" aria-label="Country opacity on the globe"></div>
+                <label class="cm-row"><input type="checkbox" id="cmExp" checked> Put the countries in exported maps</label>
+                <div class="cm-btns"><button type="button" id="cmExport">Export map&hellip;</button><button type="button" id="cmSave">Save this view (PNG)</button></div>
+                <div class="cm-hint">Hover a country for its name; click it to select it in the atlas. Anything you draw in the atlas appears here a moment later. Layer and season follow the atlas&rsquo;s Climate panel.</div>
+            </div>
+        </details>
+        <details class="section" id="cmSun">
+            <summary>Sun (day / night)</summary>
+            <div class="section-body">
+                <div class="tg"><label class="toggle-label"><input type="checkbox" id="cmSunOn"><span class="toggle-track"><span class="toggle-thumb"></span></span>Simulate day and night</label></div>
+                <div class="cm-hint" id="cmSunNote">Lights the Terrain and Satellite views. The Climate, K&ouml;ppen and Heightmap layers keep their flat legend colours. The controls appear at the bottom left of the globe while this is on. Off leaves the globe exactly as it is now.</div>
+            </div>
+        </details>
+        <details class="section">
+            <summary>Another heightmap (advanced)</summary>
+            <div class="section-body">
+                <div class="import-upload-area">
+                    <label class="import-file-label" for="heightmapFile">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Choose Image
+                    </label>
+                    <input type="file" id="heightmapFile" accept="image/png,image/jpeg,image/webp" style="display:none">
+                    <div id="importFileName" class="import-file-name"></div>
+                </div>
+                <canvas id="importPreview" class="import-preview" style="display:none"></canvas>
+                <div id="importDims" class="import-dims" style="display:none"></div>
+                <div class="import-hint">Black (0) = ocean. Brighter = higher elevation. Use a 2:1 equirectangular image.</div>
+                <div id="importExpect" class="import-expect" style="display:none">Your heightmap will be projected onto a 3D sphere with full climate simulation — wind patterns, precipitation, temperature, and biome classification — computed automatically.</div>
+                <div class="cg">
+                    <label>Detail <span class="tip" data-tip="Resolution of the sphere mesh — more detail means finer coastlines but takes longer to process">?</span> <span class="v" id="vN">204,000</span></label>
+                    <input type="range" id="sN" min="0" max="1000" step="1" value="600">
+                    <div class="slider-hint"><span>Coarse</span><span>Fine</span></div>
+                    <div class="detail-warn" id="detailWarn"></div>
+                </div>
+                <button id="importBtn" class="import-btn" disabled>Import</button>
+                <div class="import-hint" style="margin-top:8px">Your image stays on your device — nothing is uploaded. Imported worlds can't be shared via planet codes.</div>
+            </div>
+        </details>
+        <details class="section">
+            <summary>Terrain Sculpting <span class="tip" data-tip="Post-processing passes to refine the imported terrain. All default to 0 (no effect). Adjust sliders and click Reapply.">?</span></summary>
+            <div class="section-body">
+                <div class="cg">
+                    <label>Terrain Warp <span class="tip" data-tip="Deforms the elevation field using noise for more organic coastlines and mountain ridges">?</span> <span class="v" id="vTw">0.00</span></label>
+                    <input type="range" id="sTw" min="0" max="1" value="0" step="0.05">
+                    <div class="slider-hint"><span>None</span><span>Heavy</span></div>
+                </div>
+                <div class="cg">
+                    <label>Smoothing <span class="tip" data-tip="Blends harsh terrain edges and pixelation from the source image">?</span> <span class="v" id="vS">0.00</span></label>
+                    <input type="range" id="sS" min="0" max="1" value="0" step="0.05">
+                    <div class="slider-hint"><span>None</span><span>Heavy</span></div>
+                </div>
+                <div class="cg">
+                    <label>Glacial Erosion <span class="tip" data-tip="Ice-age sculpting — carves fjords, U-shaped valleys, and lake basins at high latitudes and altitudes">?</span> <span class="v" id="vGl">0.00</span></label>
+                    <input type="range" id="sGl" min="0" max="1" value="0" step="0.05">
+                    <div class="slider-hint"><span>None</span><span>Ice Age</span></div>
+                </div>
+                <div class="cg">
+                    <label>Hydraulic Erosion <span class="tip" data-tip="Iterative stream-power erosion — carves river valleys and dendritic drainage networks">?</span> <span class="v" id="vHEr">0.00</span></label>
+                    <input type="range" id="sHEr" min="0" max="1" value="0" step="0.05">
+                    <div class="slider-hint"><span>None</span><span>Deep</span></div>
+                </div>
+                <div class="cg">
+                    <label>Thermal Erosion <span class="tip" data-tip="Slope-driven material transport — softens ridges and creates natural talus slopes">?</span> <span class="v" id="vTEr">0.00</span></label>
+                    <input type="range" id="sTEr" min="0" max="1" value="0" step="0.05">
+                    <div class="slider-hint"><span>None</span><span>Heavy</span></div>
+                </div>
+                <div class="cg">
+                    <label>Ridge Sharpening <span class="tip" data-tip="Accentuates mountain ridgelines — pushes peaks further above their surroundings">?</span> <span class="v" id="vRs">0.00</span></label>
+                    <input type="range" id="sRs" min="0" max="1" value="0" step="0.05">
+                    <div class="slider-hint"><span>None</span><span>Jagged</span></div>
+                </div>
+                <button id="reapplyBtn" title="Reapply terrain sculpting" disabled><span class="reapply-icon">&#x21bb;</span> Reapply</button>
+            </div>
+        </details>
+        <details class="section">
+            <summary>Climate <span class="tip" data-tip="The planet's temperature and water cycle, worked through the climate itself — changes apply on slider release, recomputing the climate (a few seconds)">?</span></summary>
+            <div class="section-body">
+                <div class="climate-hint">Changes apply on release — the climate is recomputed.</div>
+                <div class="cg">
+                    <label>Temperature <span class="tip" data-tip="Warms or cools the whole planet. The value is the change in the heat its air holds in, in W/m²: on an Earth-like planet −10 cools it about 8 °C and +10 warms it about 6 °C. Snow, sea ice and ice sheets amplify a cooling far more than a warming — past −20 the ice starts to run away, and by about −28 the whole planet freezes over. The winds, currents and rain follow: a warm world is wetter, a cold one drier">?</span> <span class="v" id="vTmp">&plusmn;0 W/m&sup2;</span></label>
+                    <input type="range" id="sTmp" min="-30" max="30" value="0" step="2">
+                    <div class="slider-hint"><span>Icehouse</span><span>Hothouse</span></div>
+                </div>
+                <div class="cg">
+                    <label>Precipitation <span class="tip" data-tip="Speed up or slow down the planet's water cycle — more or less evaporation from its seas and land, so about this much more or less rain overall. Where it falls still follows the winds and mountains">?</span> <span class="v" id="vPrc">&plusmn;0%</span></label>
+                    <input type="range" id="sPrc" min="-1" max="1" value="0" step="0.1">
+                    <div class="slider-hint"><span>Drier</span><span>Wetter</span></div>
+                </div>
+            </div>
+        </details>
+        <details class="section" id="inspectSection">
+            <summary>Inspect (advanced) <span class="tip" data-tip="The full heightmap with the sea floor, and what the sculpting passes changed. The maps you'll want most are the tabs over the planet">?</span></summary>
+            <div class="section-body">
+                <div class="cg">
+                    <label>Layer</label>
+                    <select id="debugLayer">
+                        <option value="">None &mdash; the tab shown</option>
+                        <optgroup label="Elevation">
+                            <option value="heightmap">Full Heightmap</option>
+                            <option value="erosionDelta">Erosion Delta</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div class="tg">
+                    <label class="toggle-label"><input type="checkbox" id="chkWire"><span class="toggle-track"><span class="toggle-thumb"></span></span>Wireframe</label>
+                </div>
+            </div>
+        </details>
+        <details id="statsDetails" class="stats-toggle">
+            <summary>Stats</summary>
+            <div id="stats"></div>
+        </details>
+        <button id="exportBtn" class="export-btn">Export Map</button>
+        </div>
+    </div>
+    <div id="layerBar" class="layer-bar">
+        <div id="viewStrip" class="view-strip" role="toolbar" aria-label="View">
+            <div class="vs-seg" role="group" aria-label="Globe or map"><button type="button" data-mode="globe">Globe</button><button type="button" data-mode="map">Map</button></div>
+            <select id="viewMode" hidden aria-hidden="true" tabindex="-1">
+                <option value="globe">Globe</option>
+                <option value="map">Map</option>
+            </select>
+            <span class="vs-item" id="mapProjectionGroup" data-view="map" title="The map's shape: equirectangular (the plain 2 : 1 map), Mercator, Robinson, Equal Earth, Mollweide, Hammer, Winkel Tripel, the globe as two hemispheres, an azimuthal (polar) map, or Van der Grinten's world in a circle. Each has its own options; the export offers the same"><label for="mapProjection">Projection</label> <select id="mapProjection"></select><span id="mapProjOpts" class="xp-proj-opts" hidden></span></span>
+            <label class="vs-item" id="mapCenterLonGroup" data-view="map">Centre <input type="range" id="sMapCenterLon" min="-180" max="180" value="0" step="5" aria-label="Centre longitude"><span class="v" id="vMapCenterLon">0&deg;</span></label>
+            <label class="toggle-label" data-view="globe"><input type="checkbox" id="chkRotate"><span class="toggle-track"><span class="toggle-thumb"></span></span>Auto-Rotate</label>
+            <label class="toggle-label"><input type="checkbox" id="chkGrid" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Grid Lines</label>
+            <span class="vs-item" id="gridSpacingGroup"><select id="gridSpacing" aria-label="Grid spacing">
+                <option value="30">30&deg;</option>
+                <option value="15" selected>15&deg;</option>
+                <option value="10">10&deg;</option>
+                <option value="5">5&deg;</option>
+                <option value="2.5">2.5&deg;</option>
+            </select></span>
+            <span class="vs-item" id="paletteGroup" title="How heights are coloured on the Terrain view: Classic, this page's own, or one of Evolution's map styles and other-world looks"><label for="palette">Colours</label> <select id="palette">
+            <option value="classic" selected>Classic</option>
+            <optgroup label="Maps">
+            <option value="relief">Relief</option>
+            <option value="topographic">Topographic</option>
+            <option value="natural">Natural</option>
+            <option value="swiss">Swiss</option>
+            <option value="school">School Atlas</option>
+            <option value="etopo">ETOPO</option>
+            <option value="dem">DEM</option>
+            <option value="scientific">Scientific</option>
+            <option value="satellite">Blue Marble (by height)</option>
+            <option value="grey">Grey</option>
+            <option value="antique">Antique</option>
+            </optgroup>
+            <optgroup label="Other worlds">
+            <option value="arid">Arid</option>
+            <option value="frozen">Frozen</option>
+            <option value="lush">Lush</option>
+            <option value="alien">Alien</option>
+            <option value="volcanic">Volcanic</option>
+            </optgroup>
+            </select></span>
+        </div>
+        <div class="layer-row">
+            <button type="button" id="viewFold" class="vs-fold" aria-controls="viewStrip" aria-expanded="false" aria-label="View options" title="View options: globe or map, projection, auto-rotate, grid lines, colours"><svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M3.5 1.5 7 5 3.5 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <div class="map-tabs" id="mapTabs">
+                <button class="map-tab active" data-layer="">Terrain</button>
+                <button class="map-tab" data-layer="biome" title="The planet as from space, cloud-free: each climate's colours climbing with the land to rock and snow, for the year, January or July">Satellite</button>
+                <button class="map-tab" data-layer="climate" title="The climate: K&ouml;ppen zones, temperature, rain, winds and currents &mdash; and under More, pressure, upwelling, ice, aridity and more">Climate</button>
+                <button class="map-tab" data-layer="landheightmap" title="Land heights in grey, the sea black">Heightmap</button>
+            </div>
+        </div>
+        <div id="subBar" class="layer-subbar" hidden>
+            <div class="map-tabs" id="climateTabs">
+                <button class="map-tab" data-layer="koppen">K&ouml;ppen</button>
+                <button class="map-tab" data-layer="temperature">Temperature</button>
+                <button class="map-tab" data-layer="precip">Rain</button>
+                <button class="map-tab" data-layer="wind">Wind</button>
+                <button class="map-tab" data-layer="currents">Currents</button>
+            </div>
+            <select id="climateMore" aria-label="More climate layers" title="More climate layers: pressure, the sea, and what the land's twelve months say">
+                <option value="">More&hellip;</option>
+                <optgroup label="Atmosphere">
+                    <option value="pressure">Pressure</option>
+                </optgroup>
+                <optgroup label="Ocean">
+                    <option value="upwelling">Upwelling</option>
+                    <option value="ice">Ice</option>
+                </optgroup>
+                <optgroup label="Land">
+                    <option value="tempRange">Temperature Range</option>
+                    <option value="rainShadow">Rain Shadow</option>
+                    <option value="aridity">Aridity</option>
+                    <option value="growing">Growing Season</option>
+                    <option value="rainSeason">Rain Seasonality</option>
+                </optgroup>
+            </select>
+            <select id="climateSeason" aria-label="Season" title="The year's average, January or July">
+                <option value="year">Year</option>
+                <option value="jan">January</option>
+                <option value="jul">July</option>
+            </select>
+        </div>
+    </div>
+    <div id="legendCard" class="legend-card"><div id="vizLegend" class="viz-legend"></div></div>
+    <select id="mobileViewSwitch" class="mobile-view-switch" aria-label="Layer">
+        <option value="">Terrain</option>
+        <option value="biome">Satellite</option>
+        <optgroup label="Climate">
+            <option value="koppen">K&ouml;ppen</option>
+            <option value="temperature">Temperature</option>
+            <option value="precip">Rain</option>
+            <option value="wind">Wind</option>
+            <option value="currents">Currents</option>
+            <option value="pressure">Pressure</option>
+            <option value="upwelling">Upwelling</option>
+            <option value="ice">Ice</option>
+            <option value="tempRange">Temperature Range</option>
+            <option value="rainShadow">Rain Shadow</option>
+            <option value="aridity">Aridity</option>
+            <option value="growing">Growing Season</option>
+            <option value="rainSeason">Rain Seasonality</option>
+        </optgroup>
+        <option value="landheightmap">Heightmap</option>
+        <option value="inspect" disabled hidden>Inspect layer</option>
+    </select>
+
+    <div id="exportOverlay" class="hidden">
+        <div id="exportCard">
+            <button id="exportClose">&times;</button>
+            <h3>Export</h3>
+        </div>
+    </div>
+
+    <!-- Hidden elements for generate.js compatibility (reads these by ID) -->
+    <input type="hidden" id="sLc" value="0.3">
+    <div id="hoverInfo"></div>
+    <div id="info">Import an equirectangular B&amp;W heightmap to get started</div>
+
+    <div id="cmSunHud" class="cm-hud" hidden role="group" aria-label="Sun controls">
+        <div class="cm-hud-head">
+            <span class="cm-hud-title"><span class="cm-sun-dot"></span>Sun</span>
+            <span class="cm-hud-spacer"></span>
+            <button type="button" id="cmSunPlay" class="cm-hud-btn">Pause</button>
+            <button type="button" id="cmSunMin" class="cm-hud-icon" aria-expanded="true" title="Fold the controls">&minus;</button>
+            <button type="button" id="cmSunClose" class="cm-hud-icon" title="Switch the sun off">&times;</button>
+        </div>
+        <div class="cm-hud-body">
+            <div class="cm-hud-row"><span>Time</span><input type="range" id="cmSunTime" min="0" max="1439" value="720" aria-label="Time of day"><output id="cmSunTimeVal">12:00</output></div>
+            <div class="cm-hud-row"><span>Season</span><input type="range" id="cmSunSeason" min="0" max="364" value="91" aria-label="Day of the year, counted from the northern winter solstice"><output id="cmSunSeasonVal">day 92</output></div>
+            <div class="cm-hud-row"><span>Night</span><input type="range" id="cmSunNight" min="0" max="100" value="80" aria-label="Night darkness"><output id="cmSunNightVal">80%</output></div>
+            <div class="cm-hud-row cm-hud-pair"><span>Day lasts</span><select id="cmSunSpeed" aria-label="How long one day lasts on the globe"><option value="120">2 min</option><option value="60" selected>1 min</option><option value="20">20 s</option><option value="8">8 s</option><option value="3">3 s</option></select></div>
+            <label class="toggle-label cm-hud-toggle"><input type="checkbox" id="cmSunYear"><span class="toggle-track"><span class="toggle-thumb"></span></span>Seasons advance with the days</label>
+            <div class="cm-hud-readout" id="cmSunReadout"></div>
+        </div>
+    </div>
+    <div id="cmSunPtr" hidden aria-hidden="true"><span class="cm-ptr-dir" id="cmSunPtrDir"></span><span class="cm-ptr-sun"></span></div>
+    <script type="module" src="cosmossi-bridge.js"></script>
+    <script type="module" src="cosmossi-sun.js"></script>
+    <script type="module" src="import-main.js"></script>
+</body>
+</html>
